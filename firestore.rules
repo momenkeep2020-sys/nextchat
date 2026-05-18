@@ -58,6 +58,14 @@ service cloud.firestore {
              (data.get('readBy', []) is list);
     }
 
+    function isValidStory(data) {
+      return data.keys().hasAll(['userId', 'mediaUrl', 'timestamp']) &&
+             data.userId is string && isValidId(data.userId) &&
+             data.mediaUrl is string && data.mediaUrl.size() <= 2048 &&
+             data.timestamp is timestamp &&
+             (data.get('viewers', []) is list);
+    }
+
     // --- Collection Rules ---
 
     // Users
@@ -81,12 +89,13 @@ service cloud.firestore {
 
     // Chats
     match /chats/{chatId} {
-      allow read: if true; // Client filters strictly, but we allow access for nodes
+      allow get: if true;
+      allow list: if true;
       
       allow create: if isValidId(chatId) && isValidChat(incoming());
       
-      allow update: if isValidId(chatId) && isValidChat(incoming()) && (
-        incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'updatedAt', 'mutedBy', 'archivedBy', 'deletedBy'])
+      allow update: if isValidChat(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'updatedAt', 'mutedBy', 'archivedBy', 'deletedBy', 'pinnedBy'])
       );
 
       // Messages (Subcollection)
@@ -94,9 +103,17 @@ service cloud.firestore {
         allow read: if true;
         allow create: if isValidId(messageId) && isValidMessage(incoming());
         allow update: if isValidId(messageId) && isValidMessage(incoming()) && (
-          incoming().diff(existing()).affectedKeys().hasOnly(['readBy'])
+          incoming().diff(existing()).affectedKeys().hasOnly(['readBy', 'reactions', 'deletedBy'])
         );
       }
+    }
+
+    // Stories
+    match /stories/{storyId} {
+      allow get, list: if true;
+      allow create: if isValidId(storyId) && isValidStory(incoming());
+      allow update: if isValidStory(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['viewers']);
+      allow delete: if true;
     }
   }
 }

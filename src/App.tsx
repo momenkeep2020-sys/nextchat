@@ -59,8 +59,12 @@ import {
   Zap,
   ShieldCheck,
   Smartphone,
-  Plus
+  Plus,
+  Trophy,
+  Play
 } from "lucide-react";
+
+import { io, Socket } from "socket.io-client";
 
 const USER_COLORS = [
   "#ff8c00", // Orange
@@ -146,7 +150,7 @@ export default function App() {
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const [selectedRecipient, setSelectedRecipient] = useState<User | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(!!currentUserId);
-  const [view, setView] = useState<"chat" | "profile">("chat");
+  const [view, setView] = useState<"game" | "profile">("game");
   const [theme, setTheme] = useState<"dark" | "light">((localStorage.getItem("app_theme") as "dark" | "light") || "dark");
   const [lang, setLang] = useState<"en" | "ar">((localStorage.getItem("app_lang") as "en" | "ar") || "en");
 
@@ -180,6 +184,8 @@ export default function App() {
         setCurrentUserId(null);
         localStorage.removeItem("chat_uid");
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `${COLLECTIONS.USERS}/${currentUserId}`);
     });
   }, [currentUserId]);
 
@@ -196,92 +202,394 @@ export default function App() {
         <div className="absolute inset-0 bg-radial-at-t from-app-accent/20 to-transparent opacity-50 blur-3xl pointer-events-none" />
         <div className="flex flex-col items-center gap-6 z-10">
           <div className="w-16 h-16 border-4 border-app-accent/10 border-t-app-accent rounded-full animate-spin" />
-          <p className="text-app-text-muted font-bold text-xs tracking-widest animate-pulse uppercase">Syncing...</p>
+          <p className="text-app-text-muted font-bold text-xs tracking-widest animate-pulse uppercase">{lang === 'ar' ? 'جاري المزامنة...' : 'Syncing...'}</p>
         </div>
       </div>
     );
   } else {
-    content = view === "profile" ? (
-      <ProfileView 
-        user={currentUser!} 
-        theme={theme}
-        setTheme={setTheme}
-        lang={lang}
-        setLang={setLang}
-        onBack={() => setView("chat")} 
-        onLogout={() => {
-          localStorage.removeItem("chat_uid");
-          setCurrentUserId(null);
-          setIsLoggedIn(false);
-        }}
-      />
-    ) : selectedChat ? (
-      <ChatWindow 
-        currentUser={currentUser!} 
-        chat={selectedChat} 
-        recipient={selectedRecipient}
-        lang={lang}
-        onBack={() => setSelectedChat(null)}
-      />
-    ) : (
-      <Sidebar 
-        currentUser={currentUser!} 
-        lang={lang}
-        onSelectChat={(chat, recipient) => {
-          setSelectedChat(chat);
-          setSelectedRecipient(recipient);
-        }} 
-        selectedChatId={selectedChat?.id}
-        onOpenProfile={() => setView("profile")}
-      />
+    content = (
+      <div className="flex h-full w-full overflow-hidden bg-app-bg">
+        {/* Sidebar - Hidden on mobile when a chat is selected */}
+        <div className={cn(
+          "w-full md:w-80 lg:w-[380px] shrink-0 border-r border-white/5",
+          (selectedChat || view === "profile") ? "hidden md:block" : "block"
+        )}>
+          <Sidebar 
+            currentUser={currentUser!} 
+            lang={lang}
+            onSelectChat={(chat, recipient) => {
+              setSelectedChat(chat);
+              setSelectedRecipient(recipient);
+              setView("game");
+            }} 
+            selectedChatId={selectedChat?.id}
+            onOpenProfile={() => setView("profile")}
+          />
+        </div>
+
+        {/* Main View - GameWindow or Profile or EmptyState */}
+        <div className={cn(
+          "flex-1 relative bg-app-bg shadow-2xl",
+          (!selectedChat && view !== "profile") ? "hidden md:block" : "block"
+        )}>
+          {view === "profile" ? (
+            <ProfileView 
+              user={currentUser!} 
+              theme={theme}
+              setTheme={setTheme}
+              lang={lang}
+              setLang={setLang}
+              onBack={() => setView("game")} 
+              onLogout={() => {
+                localStorage.removeItem("chat_uid");
+                setCurrentUserId(null);
+                setIsLoggedIn(false);
+              }}
+            />
+          ) : selectedChat ? (
+            <SoccerGame 
+              currentUser={currentUser!} 
+              roomId={selectedChat.id} 
+              lang={lang}
+              onBack={() => setSelectedChat(null)}
+            />
+          ) : (
+            <div className="hidden md:flex h-full flex-col items-center justify-center bg-app-bg relative overflow-hidden">
+               <div className="absolute inset-0 opacity-[0.02] pointer-events-none" 
+                 style={{ 
+                   backgroundImage: `url("https://www.transparenttextures.com/patterns/cubes.png")`,
+                   backgroundRepeat: 'repeat'
+                 }} 
+               />
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-app-accent/10 blur-[100px] rounded-full" />
+              
+              <div className="text-center space-y-8 z-10 px-8">
+                 <div className="w-40 h-40 glass-panel rounded-[40px] flex items-center justify-center mx-auto shadow-2xl rotate-6 animate-bounce p-1">
+                   <div className="w-full h-full bg-app-accent rounded-[32px] flex items-center justify-center">
+                     <Trophy size={64} className="text-[#030406] -rotate-6" strokeWidth={1} />
+                   </div>
+                 </div>
+                 <div className="space-y-3">
+                   <h2 className="text-3xl font-black text-white tracking-tight">{lang === 'ar' ? 'مستعد للتحدي؟' : 'Ready for the Match?'}</h2>
+                   <p className="text-app-text-muted text-sm px-6 font-medium leading-relaxed max-w-[320px] mx-auto">
+                     {lang === 'ar' ? 'اختر منافساً من القائمة الجانبية لبدء مباراة كرة قدم حماسية.' : 'Select an opponent from the sidebar to start a high-stakes football match.'}
+                   </p>
+                 </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     );
   }
 
   return (
     <div className={cn(
-      "flex h-screen w-full bg-[#020203] text-app-text overflow-hidden relative font-sans items-center justify-center p-0 md:p-8",
+      "flex h-screen w-full bg-app-bg text-app-text overflow-hidden relative font-sans",
       theme === "light" && "light",
       lang === "ar" && "rtl"
     )} dir={lang === "ar" ? "rtl" : "ltr"}>
-      {/* Background elements - Immersive Aurora */}
+      {/* Background elements */}
       <div className="absolute top-0 left-0 w-full h-[600px] bg-app-accent/5 blur-[120px] rounded-full -translate-y-1/2 pointer-events-none" />
       <div className="absolute bottom-0 right-0 w-full h-[600px] bg-blue-500/5 blur-[120px] rounded-full translate-y-1/2 pointer-events-none" />
       
-      {/* Phone Frame - High-end device look */}
-      <div className="relative w-full h-full max-w-[420px] max-h-[860px] bg-app-bg md:rounded-[3rem] md:border-[10px] md:border-[#12141a] md:shadow-[0_60px_100px_-30px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col aspect-[9/19.5] ring-1 ring-white/10">
-        
-        {/* Dynamic Island / Notch Mockup */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-7 bg-[#12141a] rounded-b-2xl z-[70] hidden md:block" />
-
-        {/* Status Bar Mockup */}
-        <div className="h-10 bg-app-bg px-7 flex justify-between items-center shrink-0 z-[60] relative">
-          <span className="text-[12px] font-bold tracking-tight text-white/80 font-mono">09:41</span>
-          <div className="flex gap-1.5 items-center">
-             <div className="flex gap-0.5">
-               <div className="w-0.5 h-1.5 bg-white/40 rounded-full" />
-               <div className="w-0.5 h-2 bg-white/40 rounded-full" />
-               <div className="w-0.5 h-2.5 bg-white/80 rounded-full" />
-               <div className="w-0.5 h-3 bg-white/20 rounded-full" />
-             </div>
-            <div className="w-5 h-2.5 rounded-[4px] border border-white/20 relative flex items-center p-[1px]">
-              <div className="h-full bg-white/80 w-[70%] rounded-[1px]" />
-              <div className="absolute -right-1 w-0.5 h-1 bg-white/20 rounded-r-full" />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex-1 flex flex-col relative overflow-hidden backdrop-blur-sm">
+      <div className="relative w-full h-full flex flex-col z-10">
+        <div className="flex-1 flex flex-col relative overflow-hidden">
           {content}
-        </div>
-
-        {/* Home Indicator */}
-        <div className="h-7 bg-app-bg flex justify-center items-center shrink-0 p-2 z-[60]">
-          <div className="w-32 h-1 bg-white/10 rounded-full" />
         </div>
       </div>
     </div>
   );
 }
+
+// --- Soccer Game Component ---
+function SoccerGame({ currentUser, roomId, onBack, lang }: { currentUser: User, roomId: string, onBack: () => void, lang: "en" | "ar" }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const [gameState, setGameState] = useState<any>(null);
+  const [isConnected, setIsConnected] = useState(false);
+
+  useEffect(() => {
+    socketRef.current = io(window.location.origin);
+    const socket = socketRef.current;
+
+    socket.on("connect", () => {
+      socket.emit("join-game", roomId);
+      setIsConnected(true);
+    });
+
+    socket.on("game-state", (state) => {
+      setGameState(state);
+    });
+
+    socket.on("player-moved", ({ id, x, y, ball }) => {
+      setGameState((prev: any) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          ball,
+          players: {
+            ...prev.players,
+            [id]: { ...prev.players[id], x, y }
+          }
+        };
+      });
+    });
+
+    socket.on("ball-update", (ball) => {
+      setGameState((prev: any) => prev ? { ...prev, ball } : prev);
+    });
+
+    socket.on("goal", ({ state }) => {
+      setGameState(state);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [roomId]);
+
+  useEffect(() => {
+    if (!canvasRef.current || !gameState) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let animationFrameId: number;
+
+    const render = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Pitch
+      ctx.fillStyle = "#1e3a2f"; // Dark green football field
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Lawn stripes
+      ctx.fillStyle = "rgba(0,0,0,0.1)";
+      for(let i=0; i<canvas.width; i+=80) {
+        if((i/80)%2 === 0) ctx.fillRect(i, 0, 40, canvas.height);
+      }
+
+      // Lines
+      ctx.strokeStyle = "rgba(255,255,255,0.4)";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(5, 5, canvas.width - 10, canvas.height - 10);
+      
+      // Center Line
+      ctx.beginPath();
+      ctx.moveTo(canvas.width / 2, 0);
+      ctx.lineTo(canvas.width / 2, canvas.height);
+      ctx.stroke();
+      
+      // Center Circle
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, canvas.height / 2, 70, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Center Spot
+      ctx.fillStyle = "rgba(255,255,255,0.6)";
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, canvas.height / 2, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Goals (D-Boxes)
+      ctx.strokeRect(0, canvas.height/2 - 120, 80, 240);
+      ctx.strokeRect(canvas.width - 80, canvas.height/2 - 120, 80, 240);
+
+      // Goals (Inner)
+      ctx.fillStyle = "rgba(255,255,255,0.15)";
+      ctx.fillRect(0, canvas.height / 2 - 60, 20, 120);
+      ctx.fillRect(canvas.width - 20, canvas.height / 2 - 60, 20, 120);
+
+      // Draw Ball
+      const ball = gameState.ball;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = "rgba(0,0,0,0.5)";
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      
+      // Ball details (classic soccer pattern segments)
+      ctx.strokeStyle = "#333";
+      ctx.lineWidth = 1;
+      for(let i=0; i<5; i++) {
+        ctx.beginPath();
+        ctx.moveTo(ball.x, ball.y);
+        ctx.lineTo(ball.x + Math.cos(i*1.2)*10, ball.y + Math.sin(i*1.2)*10);
+        ctx.stroke();
+      }
+
+      // Draw Players
+      Object.values(gameState.players).forEach((p: any) => {
+        const isMe = p.id === socketRef.current?.id;
+        
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = p.side === 'left' ? "rgba(239, 68, 68, 0.4)" : "rgba(59, 130, 246, 0.4)";
+        
+        ctx.fillStyle = p.side === 'left' ? "#ef4444" : "#3b82f6";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 22, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = isMe ? "#fff" : "rgba(255,255,255,0.3)";
+        ctx.lineWidth = isMe ? 4 : 2;
+        ctx.stroke();
+        
+        // Player Label
+        ctx.fillStyle = "white";
+        ctx.font = "bold 12px Inter";
+        ctx.textAlign = "center";
+        const label = isMe ? (lang === 'ar' ? 'أنت' : 'YOU') : (p.ready ? 'READY' : '...');
+        ctx.fillText(label, p.x, p.y - 35);
+      });
+
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    render();
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [gameState, lang]);
+
+  const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!gameState || !canvasRef.current) return;
+    if (gameState.status !== 'playing') return;
+    
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    
+    let clientX, clientY;
+    if ("touches" in e) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+
+    const x = (clientX - rect.left) * (canvas.width / rect.width);
+    const y = (clientY - rect.top) * (canvas.height / rect.height);
+    
+    socketRef.current?.emit("move-player", { roomId, x, y });
+  };
+
+  const handleReady = () => {
+    socketRef.current?.emit("player-ready", roomId);
+  };
+
+  const scores = gameState ? (Object.values(gameState.players) as any[]).reduce((acc: any, p: any) => {
+    acc[p.side] = p.score;
+    return acc;
+  }, { left: 0, right: 0 }) : { left: 0, right: 0 };
+
+  const me = gameState?.players[socketRef.current?.id || ""];
+
+  return (
+    <div className="flex-1 flex flex-col h-full bg-[#0b141a] relative overflow-hidden">
+      {/* Header */}
+      <div className="z-20 h-16 bg-[#1f2c33] flex items-center justify-between px-4 shrink-0 shadow-md">
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="p-2 hover:bg-white/5 rounded-full text-app-text transition-all active:scale-90">
+             <ChevronLeft size={24} />
+          </button>
+          <div className="flex flex-col">
+            <span className="font-bold text-white uppercase tracking-widest text-[11px]">{lang === 'ar' ? 'سالي سالو - مباراة' : 'SALLY SALOO - MATCH'}</span>
+            <div className="flex items-center gap-4 text-app-accent font-black text-xl">
+               <span className="text-red-500">{scores.left}</span>
+               <span className="text-white/20 text-sm">VS</span>
+               <span className="text-blue-500">{scores.right}</span>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="px-3 py-1 bg-white/5 rounded-lg border border-white/10 text-[10px] font-black text-app-text-muted uppercase tracking-widest">
+            {gameState?.status || 'Connecting...'}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 flex items-center justify-center p-4 relative bg-[#111b21]">
+        {!isConnected ? (
+          <div className="text-center space-y-4">
+            <div className="w-12 h-12 border-4 border-app-accent/20 border-t-app-accent rounded-full animate-spin mx-auto" />
+            <p className="text-app-text-muted font-bold text-xs animate-pulse tracking-widest uppercase">{lang === 'ar' ? 'جاري الاتصال بالملعب...' : 'Connecting to pitch...'}</p>
+          </div>
+        ) : (
+          <div className="relative w-full max-w-[800px] aspect-[4/3] bg-black rounded-xl overflow-hidden shadow-[0_0_100px_-20px_rgba(16,185,129,0.3)] border-4 border-[#1f2c33]">
+            <canvas 
+              ref={canvasRef} 
+              width={800} 
+              height={600} 
+              className={cn("w-full h-full touch-none", gameState?.status === 'playing' ? "cursor-none" : "opacity-40")}
+              onMouseMove={handleMouseMove}
+              onTouchMove={handleMouseMove}
+            />
+            
+            {/* Overlay for Ready State */}
+            {gameState?.status !== 'playing' && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm z-30 p-8">
+                <div className="text-center space-y-6 max-w-sm">
+                   <Trophy size={64} className="text-app-accent mx-auto animate-bounce" />
+                   <h3 className="text-3xl font-black text-white italic tracking-tighter uppercase">
+                     {gameState?.status === 'waiting' 
+                       ? (lang === 'ar' ? 'في انتظار الخصم...' : 'WAITING FOR RIVAL...')
+                       : (lang === 'ar' ? 'استعد!' : 'GET READY!')}
+                   </h3>
+                   <p className="text-white/60 text-sm font-medium">
+                     {gameState?.status === 'waiting' 
+                       ? (lang === 'ar' ? 'سيتم تفعيل اللعب فور دخول الخصم.' : 'Match will initiate once opponent logic synchronizes.')
+                       : (lang === 'ar' ? 'كلا اللاعبين موجودين. اضغط استعد للبدء.' : 'Both rivals detected. Signal ready to kick off.')}
+                   </p>
+                   
+                   {me && !me.ready && gameState?.status !== 'waiting' && (
+                     <button 
+                       onClick={handleReady}
+                       className="w-full bg-app-accent hover:glow-accent text-[#030406] font-black py-4 rounded-xl transition-all active:scale-95 shadow-xl uppercase tracking-widest flex items-center justify-center gap-2"
+                     >
+                       <Play size={20} fill="currentColor" />
+                       {lang === 'ar' ? 'استعداد!' : 'SIGNAL READY!'}
+                     </button>
+                   )}
+                   
+                   {me?.ready && (
+                     <div className="w-full py-4 rounded-xl border-2 border-app-accent text-app-accent font-black uppercase tracking-widest animate-pulse">
+                       {lang === 'ar' ? 'تم الاستعداد' : 'READY SIGNALED'}
+                     </div>
+                   )}
+
+                   <div className="flex justify-center gap-8 mt-12 w-full pt-8 border-t border-white/10">
+                      {Object.values(gameState?.players || {}).map((p: any) => (
+                        <div key={p.id} className="flex flex-col items-center gap-2">
+                          <div className={cn("w-3 h-3 rounded-full", p.ready ? "bg-emerald-500 glow-emerald" : "bg-red-500")} />
+                          <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">
+                            {p.side === 'left' ? 'TEAM RED' : 'TEAM BLUE'}
+                          </span>
+                        </div>
+                      ))}
+                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Visual Cues */}
+            <div className="absolute top-4 left-4 bg-red-500/20 text-red-500 text-[10px] px-2 py-1 rounded font-black border border-red-500/30 uppercase tracking-widest z-20">Team Red</div>
+            <div className="absolute top-4 right-4 bg-blue-500/20 text-blue-500 text-[10px] px-2 py-1 rounded font-black border border-blue-500/30 uppercase tracking-widest z-20">Team Blue</div>
+          </div>
+        )}
+      </div>
+
+      {/* Control Hint */}
+      <div className="p-6 text-center text-app-text-muted/40 text-[10px] font-black uppercase tracking-[0.3em]">
+        {lang === 'ar' ? 'حرك الفأرة أو إصبعك للتحكم في دائرتك' : 'Move your cursor or finger to control your circle'}
+      </div>
+    </div>
+  );
+}
+
+// ... (Rest of existing Login, Sidebar, ChatItem, etc. components preserved)
 
 // --- Login / Register Component ---
 function Login({ onLogin, lang }: { onLogin: (uid: string) => void, lang: "en" | "ar" }) {
@@ -404,7 +712,7 @@ function Login({ onLogin, lang }: { onLogin: (uid: string) => void, lang: "en" |
             <MessageSquare size={44} className="text-[#030406] -rotate-3" strokeWidth={2.5} />
           </motion.div>
           <div className="text-center space-y-1">
-            <h1 className="text-4xl font-extrabold tracking-tight text-white">NextChat</h1>
+            <h1 className="text-4xl font-extrabold tracking-tight text-white italic">Sally Saloo</h1>
             <p className="text-app-text-muted font-medium text-sm">
               {isRegistering ? t.create : t.authorize}
             </p>
@@ -491,40 +799,40 @@ function Sidebar({
 }) {
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
-  const [chats, setChats] = useState<(Chat & { recipient?: User })[]>([]);
+  const [chats, setMatchRooms] = useState<(Chat & { recipient?: User })[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [activeFolder, setActiveFolder] = useState<string>("all");
   const [stories, setStories] = useState<Story[]>([]);
 
   const t = {
     en: {
-      name: "NextChat",
-      searchPlaceholder: "Search network...",
+      name: "Sally Saloo",
+      searchPlaceholder: "Search for opponents...",
       results: "Search Results",
-      scanning: "SCANNING NODES...",
-      noResults: "Zero results found",
-      recent: "Recent Activity",
-      empty: "Connect via @username to start workspace",
+      scanning: "MATCHMAKING...",
+      noResults: "No opponents found",
+      recent: "Recent Matches",
+      empty: "Connect via @username to start a match",
       folders: {
         all: "All",
-        personal: "Personal",
-        groups: "Groups",
-        channels: "Channels"
+        personal: "1v1",
+        groups: "Tournaments",
+        channels: "Leagues"
       }
     },
     ar: {
-      name: "نیکست تشات",
-      searchPlaceholder: "ابحث في الشبكة...",
+      name: "سالي سالو",
+      searchPlaceholder: "ابحث عن منافسين...",
       results: "نتائج البحث",
-      scanning: "جاري المسح...",
-      noResults: "لم يتم العثور على نتائج",
-      recent: "النشاط الأخير",
-      empty: "تواصل عبر اسم المستخدم لبدء المحادثة",
+      scanning: "جاري البحث عن خصم...",
+      noResults: "لم يتم العثور على منافسين",
+      recent: "المباريات الأخيرة",
+      empty: "تواصل عبر اسم المستخدم لبدء مباراة",
       folders: {
         all: "الكل",
-        personal: "خاص",
-        groups: "مجموعات",
-        channels: "قنوات"
+        personal: "1 ضد 1",
+        groups: "بطولات",
+        channels: "دوريات"
       }
     }
   }[lang];
@@ -538,6 +846,8 @@ function Sidebar({
     );
     return onSnapshot(q, (snapshot) => {
       setStories(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Story)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, COLLECTIONS.STORIES);
     });
   }, []);
 
@@ -550,27 +860,35 @@ function Sidebar({
     );
 
     return onSnapshot(q, async (snapshot) => {
-      const chatsData = await Promise.all(snapshot.docs.map(async (chatDoc) => {
-        const data = chatDoc.data() as Chat;
-        if (data.type === "dm") {
-          const recipientId = data.participants.find(p => p !== currentUser.id)!;
-          const recipientRef = doc(db, COLLECTIONS.USERS, recipientId);
-          const recipientSnap = await getDoc(recipientRef);
-          const recipientData = recipientSnap.data();
-          return { 
-            id: chatDoc.id, 
-            ...data, 
-            recipient: { id: recipientSnap.id, ...(recipientData || {}) } as User 
-          };
-        }
-        return { id: chatDoc.id, ...data };
-      }));
-      setChats(chatsData.filter(chat => !chat.deletedBy?.includes(currentUser.id)));
+      try {
+        const chatsData = await Promise.all(snapshot.docs.map(async (chatDoc) => {
+          const data = chatDoc.data() as Chat;
+          if (data.type === "dm") {
+            const recipientId = data.participants.find(p => p !== currentUser.id);
+            if (recipientId) {
+              const recipientRef = doc(db, COLLECTIONS.USERS, recipientId);
+              const recipientSnap = await getDoc(recipientRef);
+              const recipientData = recipientSnap.data();
+              return { 
+                id: chatDoc.id, 
+                ...data, 
+                recipient: { id: recipientSnap.id, ...(recipientData || {}) } as User 
+              };
+            }
+          }
+          return { id: chatDoc.id, ...data };
+        }));
+        setMatchRooms(chatsData.filter(chat => !chat.deletedBy?.includes(currentUser.id)));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.GET, COLLECTIONS.CHATS);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, COLLECTIONS.CHATS);
     });
   }, [currentUser.id]);
 
-  // Filter chats by folder
-  const filteredChats = chats.filter(chat => {
+  // Filter match rooms by folder
+  const filteredMatches = chats.filter(chat => {
     if (activeFolder === "all") return true;
     if (activeFolder === "personal") return chat.type === "dm";
     if (activeFolder === "groups") return chat.type === "group";
@@ -703,7 +1021,7 @@ function Sidebar({
           </div>
         ) : (
           <>
-            {filteredChats.map((chat) => (
+            {filteredMatches.map((chat) => (
               <ChatItem 
                 key={chat.id} 
                 chat={chat} 
@@ -713,10 +1031,10 @@ function Sidebar({
                 lang={lang}
               />
             ))}
-            {filteredChats.length === 0 && (
+            {filteredMatches.length === 0 && (
               <div className="p-12 text-center text-app-text-muted/20 flex flex-col items-center gap-6">
                 <div className="w-16 h-16 bg-white/2 rounded-[2rem] flex items-center justify-center border border-white/5">
-                  <MessageSquare size={32} />
+                  <Trophy size={32} />
                 </div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] leading-relaxed">{t.empty}</p>
               </div>
@@ -725,10 +1043,7 @@ function Sidebar({
         )}
       </div>
 
-      {/* Floating Action Button */}
-      <button className="absolute bottom-10 right-8 w-14 h-14 bg-app-accent text-[#030406] rounded-2xl flex items-center justify-center shadow-2xl hover:glow-accent active:scale-90 transition-all z-50">
-        <Edit2 size={24} />
-      </button>
+      {/* Removed Floating Action Button for match focus */}
     </div>
   );
 }
@@ -776,8 +1091,8 @@ function ChatItem({ chat, isActive, onClick, currentUserId, lang }: { chat: Chat
   const [unreadCount, setUnreadCount] = useState(0);
 
   const t = {
-    en: { typing: "pulsing data...", open: "Open link with @" },
-    ar: { typing: "جاري الكتابة...", open: "افتح المحادثة مع @" }
+    en: { typing: "preparing for match...", open: "Challenge " },
+    ar: { typing: "يستعد للمباراة...", open: "تحدَّ " }
   }[lang];
 
   useEffect(() => {
@@ -939,14 +1254,19 @@ function ChatWindow({ currentUser, chat, recipient, onBack, lang }: { currentUse
 
       setMessages(msgs);
       isFirstLoad.current = false;
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `chats/${chat.id}/messages`);
     });
 
     return unsubscribe;
   }, [chat?.id, currentUser.id]);
 
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (messages.length > 0) {
+      const behavior = isFirstLoad.current ? "auto" : "smooth";
+      scrollRef.current?.scrollIntoView({ behavior });
+    }
+  }, [messages.length]);
 
   const generateSmartReplies = async (incomingText: string) => {
     if (isGeneratingReplies) return;
@@ -1003,6 +1323,11 @@ function ChatWindow({ currentUser, chat, recipient, onBack, lang }: { currentUse
       setSmartReplies([]);
       setShowEmoji(false);
       updateDoc(doc(db, COLLECTIONS.USERS, currentUser.id), { isTyping: null });
+      
+      // Force scroll to bottom after send
+      setTimeout(() => {
+        scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, "messages");
     }
@@ -1085,8 +1410,7 @@ function ChatWindow({ currentUser, chat, recipient, onBack, lang }: { currentUse
     onBack();
   };
 
-  if (!recipient || !chat) {
-    // ... empty state ...
+  if (!chat) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-app-bg relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: "linear-gradient(rgba(255,255,255,1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,1) 1px, transparent 1px)", backgroundSize: "40px 40px" }} />
@@ -1117,11 +1441,17 @@ function ChatWindow({ currentUser, chat, recipient, onBack, lang }: { currentUse
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-app-bg relative">
-      <div className="absolute inset-0 bg-black/60 opacity-30 pointer-events-none z-0" />
+    <div className="flex-1 flex flex-col h-full bg-[#0b141a] relative overflow-hidden">
+      {/* WhatsApp Background Pattern */}
+      <div className="absolute inset-0 opacity-[0.06] pointer-events-none z-0" 
+        style={{ 
+          backgroundImage: `url("https://www.transparenttextures.com/patterns/shattered.png")`,
+          backgroundRepeat: 'repeat'
+        }} 
+      />
       
       {/* Header */}
-      <div className="z-20 h-20 glass-panel flex items-center justify-between px-6 shrink-0 shadow-xl border-t-0 border-x-0">
+      <div className="z-20 h-16 bg-[#1f2c33] flex items-center justify-between px-4 shrink-0 shadow-md">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 hover:bg-white/5 rounded-full text-app-text transition-all active:scale-90">
              <ChevronLeft size={24} />
@@ -1194,7 +1524,7 @@ function ChatWindow({ currentUser, chat, recipient, onBack, lang }: { currentUse
       )}
 
       {/* Input Area */}
-      <div className="p-4 z-20 space-y-2 bg-app-bg/80 backdrop-blur-md">
+      <div className="p-3 z-20 space-y-2 bg-[#1f2c33]">
         {/* Reply Preview */}
         <AnimatePresence>
           {replyTo && (
@@ -1202,10 +1532,10 @@ function ChatWindow({ currentUser, chat, recipient, onBack, lang }: { currentUse
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="bg-app-surface/60 border-l-4 border-app-accent p-3 rounded-tr-2xl rounded-br-2xl flex justify-between items-center"
+              className="bg-[#111b21] border-l-4 border-app-accent p-2.5 rounded-lg flex justify-between items-center mb-1"
             >
               <div className="min-w-0">
-                <span className="text-[10px] font-black text-app-accent uppercase tracking-widest">{t.replyingTo}</span>
+                <span className="text-[10px] font-bold text-app-accent uppercase tracking-widest">{t.replyingTo}</span>
                 <p className="text-app-text-muted text-xs truncate">{replyTo.text}</p>
               </div>
               <button onClick={() => setReplyTo(null)} className="p-1 hover:text-white"><X size={14} /></button>
@@ -1216,10 +1546,10 @@ function ChatWindow({ currentUser, chat, recipient, onBack, lang }: { currentUse
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="bg-app-surface/60 border-l-4 border-yellow-500 p-3 rounded-tr-2xl rounded-br-2xl flex justify-between items-center"
+              className="bg-[#111b21] border-l-4 border-yellow-500 p-2.5 rounded-lg flex justify-between items-center mb-1"
             >
               <div className="min-w-0">
-                <span className="text-[10px] font-black text-yellow-500 uppercase tracking-widest">{t.editing}</span>
+                <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest">{t.editing}</span>
                 <p className="text-app-text-muted text-xs truncate">{editingMessage.text}</p>
               </div>
               <button onClick={() => { setEditingMessage(null); setNewMessage(""); }} className="p-1 hover:text-white"><X size={14} /></button>
@@ -1227,30 +1557,30 @@ function ChatWindow({ currentUser, chat, recipient, onBack, lang }: { currentUse
           )}
         </AnimatePresence>
 
-        <div className="flex items-end gap-3">
-          <div className="flex-1 bg-app-surface/60 border border-white/5 rounded-[28px] px-4 py-2 flex items-end gap-3 relative focus-within:bg-app-surface transition-all">
-            <button type="button" onClick={() => setShowEmoji(!showEmoji)} className="p-1.5 text-app-text-muted hover:text-app-accent active:scale-90"><Smile size={22} /></button>
+        <div className="flex items-end gap-2">
+          <div className="flex-1 bg-[#2a3942] rounded-[24px] px-3 py-1 flex items-end gap-2 relative transition-all">
+            <button type="button" onClick={() => setShowEmoji(!showEmoji)} className="p-2 text-[#8696a0] hover:text-white active:scale-90"><Smile size={24} /></button>
             <textarea
               value={newMessage}
               onChange={(e) => handleTyping(e.target.value)}
               placeholder={t.placeholder}
               rows={1}
-              className="w-full bg-transparent border-none outline-none text-[15px] py-1.5 resize-none max-h-32 mb-0.5 placeholder:text-app-text-muted/60 text-white"
+              className="flex-1 bg-transparent border-none outline-none text-[15px] py-2 resize-none max-h-32 placeholder:text-[#8696a0] text-white"
             />
-            <button className="p-1.5 text-app-text-muted hover:text-white"><Paperclip size={20} className="-rotate-45" /></button>
+            <button className="p-2 text-[#8696a0] hover:text-white"><Paperclip size={24} className="-rotate-45" /></button>
             
             {showEmoji && (
-              <div className="absolute bottom-[calc(100%+0.5rem)] left-0 z-50 shadow-2xl rounded-3xl overflow-hidden border border-white/10">
-                <EmojiPicker width={280} height={350} theme={"dark" as any} onEmojiClick={(e) => setNewMessage(p => p + e.emoji)} />
+              <div className="absolute bottom-[calc(100%+1rem)] left-0 z-50 shadow-2xl rounded-2xl overflow-hidden">
+                <EmojiPicker width={300} height={400} theme={"dark" as any} onEmojiClick={(e) => setNewMessage(p => p + e.emoji)} />
               </div>
             )}
           </div>
           <button 
             onClick={handleSend}
             disabled={!newMessage.trim()}
-            className="w-13 h-13 bg-app-accent text-[#030406] rounded-2xl flex items-center justify-center shrink-0 shadow-lg hover:glow-accent active:scale-90 transition-all disabled:opacity-30"
+            className="w-12 h-12 bg-[#00a884] text-white rounded-full flex items-center justify-center shrink-0 shadow-lg active:scale-90 transition-all disabled:opacity-30"
           >
-            <Send size={22} strokeWidth={2.5} />
+            <Send size={24} />
           </button>
         </div>
       </div>
@@ -1300,22 +1630,32 @@ function MessageItem({
     <motion.div 
       initial={{ opacity: 0, y: 10, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      className={cn("flex w-full group relative", isMe ? "justify-end" : "justify-start")}
+      className={cn(
+        "flex w-full group relative", 
+        lang === "ar" 
+          ? (isMe ? "justify-start" : "justify-end") 
+          : (isMe ? "justify-end" : "justify-start")
+      )}
     >
-      <div className={cn("max-w-[85%] flex flex-col gap-1", isMe ? "items-end" : "items-start")}>
+      <div className={cn(
+        "max-w-[85%] md:max-w-[70%] flex flex-col gap-0.5", 
+        lang === "ar"
+          ? (isMe ? "items-start" : "items-end")
+          : (isMe ? "items-end" : "items-start")
+      )}>
         {replyMessage && !isDeleted && (
-          <div className={cn("bg-white/5 px-3 py-1 rounded-t-xl border-l-2 border-app-accent text-[11px] opacity-60 truncate max-w-xs", isMe ? "mr-4" : "ml-4")}>
+          <div className={cn("bg-[#111b21] px-3 py-2 rounded-t-lg border-l-4 border-app-accent text-[11px] opacity-80 truncate max-w-xs", isMe ? "mr-1" : "ml-1")}>
              {replyMessage.text}
           </div>
         )}
         <div
           onContextMenu={(e) => { e.preventDefault(); setShowReactions(!showReactions); }}
           className={cn(
-            "px-4 py-2.5 relative shadow-xl min-w-[60px]",
-            isDeleted ? "bg-app-surface/40 text-app-text-muted italic border border-white/5 rounded-2xl" : 
+            "px-3 py-2 relative shadow-md min-w-[80px]",
+            isDeleted ? "bg-[#111b21] text-app-text-muted italic border border-white/5 rounded-lg" : 
             isMe 
-              ? "bg-app-message-out text-white rounded-[20px] rounded-tr-none" 
-              : "bg-app-message-in text-app-text rounded-[20px] rounded-tl-none border border-white/5"
+              ? "bg-[#005c4b] text-white rounded-lg rounded-tr-none" 
+              : "bg-[#202c33] text-white rounded-lg rounded-tl-none border border-white/5"
           )}
         >
           {isDeleted ? (
@@ -1325,10 +1665,10 @@ function MessageItem({
             </div>
           ) : (
             <>
-              <p className="text-[14px] leading-[1.4] pr-12">{msg.text}</p>
-              <div className="absolute bottom-1 right-2 flex items-center gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
-                <span className="text-[8px] font-mono">{formatTime(msg.timestamp)}</span>
-                {isMe && recipient && <CheckCheck size={10} className={msg.readBy?.includes(recipient.id) ? "text-white" : "opacity-40"} />}
+              <p className="text-[14.5px] leading-[1.4] pr-10">{msg.text}</p>
+              <div className="absolute bottom-1 right-2 flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                <span className="text-[9px] font-medium">{formatTime(msg.timestamp)}</span>
+                {isMe && recipient && <CheckCheck size={12} className={msg.readBy?.includes(recipient.id) ? "text-[#53bdeb]" : "text-[#8696a0]"} />}
               </div>
             </>
           )}

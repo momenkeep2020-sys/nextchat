@@ -1,6 +1,6 @@
 {
-  "name": "NextChat",
-  "description": "NextChat: a next-generation messaging platform blending the power of Telegram, simplicity of WhatsApp, and social interaction of Messenger into a premium, AI-powered experience.",
+  "name": "Sally Saloo",
+  "description": "Sally Saloo: A competitive real-time soccer showdown where users challenge each other in high-speed matches.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
