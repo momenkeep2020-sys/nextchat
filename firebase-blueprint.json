@@ -1,0 +1,93 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and state",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string", "format": "uri" },
+        "isOnline": { "type": "boolean" },
+        "lastSeen": { "type": "object" },
+        "isTyping": { "type": "string" },
+        "bio": { "type": "string" },
+        "folders": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["username", "displayName"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "Conversation between users or groups",
+      "type": "object",
+      "properties": {
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "lastMessage": { "type": "string" },
+        "updatedAt": { "type": "object" },
+        "mutedBy": { "type": "array", "items": { "type": "string" } },
+        "archivedBy": { "type": "array", "items": { "type": "string" } },
+        "deletedBy": { "type": "array", "items": { "type": "string" } },
+        "type": { "type": "string", "enum": ["dm", "group", "channel"] },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "admins": { "type": "array", "items": { "type": "string" } },
+        "photoURL": { "type": "string" }
+      },
+      "required": ["participants", "updatedAt", "type"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Individual message in a chat",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "object" },
+        "readBy": { "type": "array", "items": { "type": "string" } },
+        "replyTo": { "type": "string" },
+        "reactions": { "type": "object" },
+        "isEdited": { "type": "boolean" },
+        "deletedBy": { "type": "array", "items": { "type": "string" } },
+        "type": { "type": "string", "enum": ["text", "voice", "video", "poll", "image"] },
+        "mediaUrl": { "type": "string" },
+        "pollData": { "type": "object" }
+      },
+      "required": ["senderId", "timestamp", "type"]
+    },
+    "Story": {
+      "title": "Story",
+      "description": "Status update / story",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "mediaUrl": { "type": "string" },
+        "timestamp": { "type": "object" },
+        "viewers": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["userId", "mediaUrl", "timestamp"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User documents"
+    },
+    "usernames/{username}": {
+      "schema": { "type": "object", "properties": { "uid": { "type": "string" } } },
+      "description": "Username to UID mapping"
+    },
+    "chats/{chatId}": {
+      "schema": "Chat",
+      "description": "Chat documents"
+    },
+    "chats/{chatId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Message subcollection"
+    },
+    "stories/{storyId}": {
+      "schema": "Story",
+      "description": "Status updates"
+    }
+  }
+}

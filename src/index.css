@@ -1,0 +1,104 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-app-bg: var(--app-bg);
+  --color-app-sidebar: var(--app-sidebar);
+  --color-app-surface: var(--app-surface);
+  --color-app-message-in: var(--app-message-in);
+  --color-app-message-out: var(--app-message-out);
+  --color-app-accent: var(--app-accent);
+  --color-app-accent-glow: rgba(14, 165, 233, 0.4);
+  --color-app-text: var(--app-text);
+  --color-app-text-muted: var(--app-text-muted);
+  --color-app-border: var(--app-border);
+  
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  :root {
+    --app-bg: #030406;
+    --app-sidebar: #080a0f;
+    --app-surface: #10141d;
+    --app-message-in: #161c28;
+    --app-message-out: #0ea5e9;
+    --app-accent: #0ea5e9;
+    --app-text: #f1f5f9;
+    --app-text-muted: #94a3b8;
+    --app-border: #1e293b;
+    --app-accent-glow: rgba(14, 165, 233, 0.4);
+  }
+
+  .light {
+    --app-bg: #f8fafc;
+    --app-sidebar: #f1f5f9;
+    --app-surface: #ffffff;
+    --app-message-in: #e2e8f0;
+    --app-message-out: #0ea5e9;
+    --app-accent: #38bdf8;
+    --app-text: #0f172a;
+    --app-text-muted: #64748b;
+    --app-border: #e2e8f0;
+    --app-accent-glow: rgba(56, 189, 248, 0.2);
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply bg-app-surface/60 backdrop-blur-xl border border-white/5;
+  }
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-md border border-white/10 shadow-2xl;
+  }
+  .glow-accent {
+    box-shadow: 0 0 20px var(--app-accent-glow);
+  }
+  .glow-emerald {
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-app-bg text-app-text font-sans antialiased overflow-hidden;
+  }
+}
+
+/* Custom scrollbar for that high-tech feel */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-white/5 rounded-full hover:bg-white/15 transition-colors;
+}
+
+.chat-bubble-shadow {
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.4);
+}
+
+.glass-panel {
+  @apply bg-app-surface/60 backdrop-blur-xl border border-white/5;
+}
+
+.glow-accent {
+  box-shadow: 0 0 20px var(--color-app-accent-glow);
+}
+
+.glow-emerald {
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+}
+

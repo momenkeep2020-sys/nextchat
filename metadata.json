@@ -1,0 +1,6 @@
+{
+  "name": "NextChat",
+  "description": "NextChat: a next-generation messaging platform blending the power of Telegram, simplicity of WhatsApp, and social interaction of Messenger into a premium, AI-powered experience.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

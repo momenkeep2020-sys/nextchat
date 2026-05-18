@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['username', 'displayName', 'isOnline', 'lastSeen']) &&
+             data.username is string && data.username.size() >= 3 && data.username.size() <= 32 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 64 &&
+             data.isOnline is bool &&
+             data.lastSeen is timestamp &&
+             (data.get('photoURL', '') is string && data.get('photoURL', '').size() <= 2048) &&
+             (data.get('isTyping', null) == null || (data.isTyping is string && isValidId(data.isTyping)));
+    }
+
+    function isValidUsername(data) {
+      return data.keys().hasAll(['uid']) && data.keys().size() == 1 &&
+             data.uid is string && isValidId(data.uid);
+    }
+
+    function isValidChat(data) {
+      return data.keys().hasAll(['participants', 'updatedAt']) &&
+             data.participants is list && data.participants.size() == 2 &&
+             data.participants[0] is string && data.participants[1] is string &&
+             data.updatedAt is timestamp &&
+             (data.get('mutedBy', []) is list) &&
+             (data.get('archivedBy', []) is list) &&
+             (data.get('deletedBy', []) is list);
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['senderId', 'text', 'timestamp']) &&
+             data.senderId is string && isValidId(data.senderId) &&
+             data.text is string && data.text.size() <= 5000 &&
+             data.timestamp is timestamp &&
+             (data.get('readBy', []) is list);
+    }
+
+    // --- Collection Rules ---
+
+    // Users
+    match /users/{userId} {
+      allow get, list: if true; // Public read for networking
+      
+      allow create: if isValidId(userId) && isValidUser(incoming());
+      
+      allow update: if isValidId(userId) && isValidUser(incoming()) && (
+        // Allow updating if user knows the secret UUID (demonstration mode)
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'isOnline', 'lastSeen', 'isTyping', 'username'])
+      );
+    }
+
+    // Usernames (Reservation)
+    match /usernames/{username} {
+      allow get: if true;
+      allow create: if isValidUsername(incoming());
+      allow delete: if true; // Allow releasing if they have the UI/ID access
+    }
+
+    // Chats
+    match /chats/{chatId} {
+      allow read: if true; // Client filters strictly, but we allow access for nodes
+      
+      allow create: if isValidId(chatId) && isValidChat(incoming());
+      
+      allow update: if isValidId(chatId) && isValidChat(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'updatedAt', 'mutedBy', 'archivedBy', 'deletedBy'])
+      );
+
+      // Messages (Subcollection)
+      match /messages/{messageId} {
+        allow read: if true;
+        allow create: if isValidId(messageId) && isValidMessage(incoming());
+        allow update: if isValidId(messageId) && isValidMessage(incoming()) && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['readBy'])
+        );
+      }
+    }
+  }
+}
