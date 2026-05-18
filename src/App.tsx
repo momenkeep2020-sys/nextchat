@@ -706,9 +706,9 @@ function Sidebar({
             {filteredChats.map((chat) => (
               <ChatItem 
                 key={chat.id} 
-                chat={chat as Chat & { recipient: User }} 
+                chat={chat} 
                 isActive={selectedChatId === chat.id}
-                onClick={() => onSelectChat(chat, chat.recipient!)} 
+                onClick={() => onSelectChat(chat, chat.recipient)} 
                 currentUserId={currentUser.id}
                 lang={lang}
               />
@@ -771,7 +771,7 @@ function UserItem({ user, onClick }: { user: User, onClick: () => void | Promise
   );
 }
 
-function ChatItem({ chat, isActive, onClick, currentUserId, lang }: { chat: Chat & { recipient: User }, isActive: boolean, onClick: () => void | Promise<void>, currentUserId: string, lang: "en" | "ar", key?: string }) {
+function ChatItem({ chat, isActive, onClick, currentUserId, lang }: { chat: Chat & { recipient?: User }, isActive: boolean, onClick: () => void | Promise<void>, currentUserId: string, lang: "en" | "ar", key?: string }) {
   const isMuted = chat.mutedBy?.includes(currentUserId);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -793,6 +793,11 @@ function ChatItem({ chat, isActive, onClick, currentUserId, lang }: { chat: Chat
     });
   }, [chat.id, currentUserId]);
 
+  const displayTitle = chat.type === "dm" ? chat.recipient?.displayName : (chat.title || "Group Chat");
+  const displayPhoto = chat.type === "dm" ? chat.recipient?.photoURL : chat.photoURL;
+  const displayUsername = chat.type === "dm" ? chat.recipient?.username : "group";
+  const isTyping = chat.type === "dm" && chat.recipient?.isTyping === chat.id;
+
   return (
     <motion.div
       whileHover={{ x: 4 }}
@@ -804,21 +809,24 @@ function ChatItem({ chat, isActive, onClick, currentUserId, lang }: { chat: Chat
     >
       <div className="relative shrink-0">
         <div className="w-12 h-12 rounded-2xl overflow-hidden bg-app-surface border border-white/10 p-0.5">
-          {chat.recipient.photoURL ? (
-            <img src={chat.recipient.photoURL} className="w-full h-full object-cover rounded-[14px]" referrerPolicy="no-referrer" />
+          {displayPhoto ? (
+            <img src={displayPhoto} className="w-full h-full object-cover rounded-[14px]" referrerPolicy="no-referrer" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-app-surface text-app-accent font-bold rounded-[14px]">{chat.recipient.displayName[0]}</div>
+            <div className="w-full h-full flex items-center justify-center bg-app-surface text-app-accent font-bold rounded-[14px]">
+              {chat.type === "dm" ? displayTitle?.[0] : (chat.type === "group" ? <Users size={20} /> : <Hash size={20} />)}
+            </div>
           )}
         </div>
-        {chat.recipient.isOnline && (
+        {chat.type === "dm" && chat.recipient?.isOnline && (
           <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-app-bg glow-emerald" />
         )}
       </div>
       <div className="flex-1 min-w-0 flex flex-col justify-center">
         <div className="flex justify-between items-center mb-0.5">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="font-bold text-sm truncate text-white">{chat.recipient.displayName}</span>
+            <span className="font-bold text-sm truncate text-white">{displayTitle}</span>
             {isMuted && <BellOff size={11} className="text-app-text-muted/60" />}
+            {chat.type === "channel" && <div className="bg-app-accent/20 text-app-accent px-1 rounded text-[8px] font-bold uppercase tracking-widest mt-0.5">CH</div>}
           </div>
           <span className={cn(
             "text-[10px] font-mono",
@@ -832,7 +840,7 @@ function ChatItem({ chat, isActive, onClick, currentUserId, lang }: { chat: Chat
             "text-[13px] truncate flex-1",
             unreadCount > 0 ? "text-white font-semibold" : "text-app-text-muted"
           )}>
-            {chat.recipient.isTyping === chat.id ? <span className="text-app-accent animate-pulse font-medium">{t.typing}</span> : (chat.lastMessage || `${t.open}${chat.recipient.username}`)}
+            {isTyping ? <span className="text-app-accent animate-pulse font-medium">{t.typing}</span> : (chat.lastMessage || `${t.open}${displayUsername}`)}
           </p>
           {unreadCount > 0 && (
             <div className="bg-app-accent text-[#030406] text-[10px] font-black min-w-[18px] h-4.5 rounded-full flex items-center justify-center px-1.5 shrink-0 glow-accent">
@@ -960,7 +968,7 @@ function ChatWindow({ currentUser, chat, recipient, onBack, lang }: { currentUse
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!newMessage.trim() || !chat || !recipient) return;
+    if (!newMessage.trim() || !chat) return;
 
     try {
       const messagesRef = collection(db, COLLECTIONS.CHATS, chat.id, COLLECTIONS.MESSAGES);
@@ -977,7 +985,8 @@ function ChatWindow({ currentUser, chat, recipient, onBack, lang }: { currentUse
           text: newMessage,
           timestamp: serverTimestamp(),
           replyTo: replyTo?.id || null,
-          type: "text"
+          type: "text",
+          readBy: [currentUser.id]
         });
       }
 
@@ -1034,10 +1043,11 @@ function ChatWindow({ currentUser, chat, recipient, onBack, lang }: { currentUse
     const summaryMsg = lang === "en" ? "Summarizing conversation..." : "جاري تلخيص المحادثة...";
     setNewMessage(summaryMsg);
     try {
+      const activeMessages = messages.filter(m => !m.deletedBy?.includes(currentUser.id));
       const response = await fetch("/api/ai/summarize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: messages.slice(-20), lang })
+        body: JSON.stringify({ messages: activeMessages.slice(-20), lang })
       });
       const data = await response.json();
       setNewMessage(data.summary || "");
@@ -1117,15 +1127,21 @@ function ChatWindow({ currentUser, chat, recipient, onBack, lang }: { currentUse
           <div className="relative group">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl overflow-hidden bg-app-surface ring-1 ring-white/10 group-hover:ring-app-accent/50 transition-all">
-                {recipient.photoURL ? (
-                  <img src={recipient.photoURL} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                {recipient?.photoURL || chat.photoURL ? (
+                  <img src={recipient?.photoURL || chat.photoURL} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-app-accent font-bold text-lg">{recipient.displayName[0]}</div>
+                  <div className="w-full h-full flex items-center justify-center text-app-accent font-bold text-lg">
+                    {recipient ? recipient.displayName[0] : (chat.title?.[0] || <Users size={18} />)}
+                  </div>
                 )}
               </div>
               <div className="flex flex-col min-w-0">
-                <span className="font-bold text-sm tracking-tight truncate w-24 text-white">{recipient.displayName}</span>
-                <span className="text-[10px] font-mono text-emerald-400 font-medium">{recipient.isOnline ? t.active : t.disconnected}</span>
+                <span className="font-bold text-sm tracking-tight truncate w-24 text-white">
+                  {recipient ? recipient.displayName : (chat.title || "Group Chat")}
+                </span>
+                <span className="text-[10px] font-mono text-emerald-400 font-medium">
+                  {recipient ? (recipient.isOnline ? t.active : t.disconnected) : `${chat.participants.length} members`}
+                </span>
               </div>
             </div>
           </div>
@@ -1254,7 +1270,7 @@ function MessageItem({
 }: { 
   msg: Message, 
   isMe: boolean, 
-  recipient: User, 
+  recipient: User | null, 
   onReply: () => void, 
   onEdit: () => void,
   onReact: (emoji: string) => void,
@@ -1287,7 +1303,7 @@ function MessageItem({
       <div className={cn("max-w-[85%] flex flex-col gap-1", isMe ? "items-end" : "items-start")}>
         {replyMessage && !isDeleted && (
           <div className={cn("bg-white/5 px-3 py-1 rounded-t-xl border-l-2 border-app-accent text-[11px] opacity-60 truncate max-w-xs", isMe ? "mr-4" : "ml-4")}>
-            {replyMessage.text}
+             {replyMessage.text}
           </div>
         )}
         <div
@@ -1310,7 +1326,7 @@ function MessageItem({
               <p className="text-[14px] leading-[1.4] pr-12">{msg.text}</p>
               <div className="absolute bottom-1 right-2 flex items-center gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
                 <span className="text-[8px] font-mono">{formatTime(msg.timestamp)}</span>
-                {isMe && <CheckCheck size={10} className={msg.readBy?.includes(recipient.id) ? "text-white" : "opacity-40"} />}
+                {isMe && recipient && <CheckCheck size={10} className={msg.readBy?.includes(recipient.id) ? "text-white" : "opacity-40"} />}
               </div>
             </>
           )}
