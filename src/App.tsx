@@ -1049,10 +1049,12 @@ function ChatWindow({ currentUser, chat, recipient, onBack, lang }: { currentUse
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: activeMessages.slice(-20), lang })
       });
+      if (!response.ok) throw new Error("Server unavailable");
       const data = await response.json();
       setNewMessage(data.summary || "");
     } catch (err) {
       console.error("AI Error:", err);
+      setNewMessage(lang === "en" ? "AI Summarization unavailable on static hosting. Use Cloud Run." : "تلخيص الذكاء الاصطناعي غير متوفر على الاستضافة الثابتة. استخدم Cloud Run.");
     }
   };
 
